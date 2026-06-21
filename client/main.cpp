@@ -1,12 +1,18 @@
 #include <iostream>
 #include <WinSock2.h>
 #include <WS2tcpip.h>
+#include <string>
+#include <thread>
 
 using namespace std;
 
 #pragma comment(lib, "ws2_32.lib")
 
 /*
+must go through ReadMe on github, detailed code walkthorugh avaialble:
+https://github.com/NamanAgarwal016/ChatAppCppProject
+
+
 Client code Steps:
 1. Initialize WinSock Library
 2. create the Socket
@@ -23,6 +29,53 @@ bool Initialize() {		// Boiler Plate code
 	return WSAStartup(MAKEWORD(2, 2), &data) == 0;
 }
 
+void SendMsg(SOCKET serverSocket) {
+	cout << "Enter your chat name: " << endl;
+	string name;
+	getline(cin, name);
+	string userMsg;
+
+	while (1) { 
+		getline(cin, userMsg);
+		if (userMsg == "quit") {
+			cout << "Stopping your chat session..." << endl;
+			break;
+		}
+		string msg = name + ": " + userMsg;
+
+		int bytesent = send(serverSocket, msg.c_str(), msg.length(), 0);
+
+		if (bytesent == SOCKET_ERROR) {
+			cout << "Message sending failed" << endl;
+			break;
+		}
+	}
+
+	closesocket(serverSocket);
+	WSACleanup();
+}
+
+void ReceiveMsg(SOCKET serverSocket) {
+	char buffer[4096];
+	int bytesrecvd;
+	string msg;
+	while (1) {
+		bytesrecvd = recv(serverSocket, buffer, sizeof(buffer), 0);
+		if (bytesrecvd <= 0) {			// 0 : clinet raised close call, <0 : serverSocket
+			cout << "Disconnected from server!!" << endl;
+			break;
+		}
+		else {
+			msg = string(buffer, bytesrecvd);
+			cout << msg << endl;
+		}
+
+	}
+
+	closesocket(serverSocket);
+	WSACleanup();
+}
+
 int main() {
 	cout << "Client program..." << endl;
 
@@ -33,8 +86,8 @@ int main() {
 	}
 
 	// 2. create the Socket
-	SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
-	if (s == INVALID_SOCKET) {
+	SOCKET serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+	if (serverSocket == INVALID_SOCKET) {
 		cout << "Socket creation failed!!" << endl;
 		return 1;
 	}
@@ -51,33 +104,26 @@ int main() {
 	// convert the ip address(0.0.0.0  -> localhost) to binary format and put it inside the sin_address
 	if (inet_pton(AF_INET, serveraddress.c_str(), &(serveraddr.sin_addr)) != 1) {
 		cout << "Address struct setting failed!!" << endl;
-		closesocket(s);
+		closesocket(serverSocket);
 		WSACleanup();
 		return 1;
 	}
 
 	// 4. Connect to server
-	if(connect(s, reinterpret_cast<sockaddr*>(&serveraddr), sizeof(serveraddr)) == SOCKET_ERROR) {
+	if(connect(serverSocket, reinterpret_cast<sockaddr*>(&serveraddr), sizeof(serveraddr)) == SOCKET_ERROR) {
 		cout << "Not able to connect to Server!!" << endl;
-		closesocket(s);
+		closesocket(serverSocket);
 		WSACleanup();
 		return 1;
 	}
 
 	cout << "Successfulyy conected to server on port: " << port << endl;
 
-	// 5. Send/ Recv
-	string message = "Hello Naman, this is message sent over socket!!";
-	int bytesent = send(s, message.c_str(), message.length(), 0);
+	thread senderThread(SendMsg, serverSocket);
+	thread receiverThread(ReceiveMsg, serverSocket);
 
-	if (bytesent == SOCKET_ERROR) {
-		cout << "Message sending failed" << endl;
-	}
+	senderThread.join();
+	receiverThread.join();
 
-	// 6. Close the socket
-	closesocket(s);
-
-	// 7. Cleanup the WinSock
-	WSACleanup();
 	return 0;
 }

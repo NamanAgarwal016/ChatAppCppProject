@@ -3,19 +3,24 @@
 #include <WS2tcpip.h>
 #include <tchar.h>
 #include <thread>
+#include <vector>
 
 using namespace std;
 
 #pragma comment(lib, "ws2_32.lib")		// for using socket lib, linking with ws2 lib
 
 /*
+must go through ReadMe on github, detailed code walkthorugh avaialble:
+https://github.com/NamanAgarwal016/ChatAppCppProject
+
+
 Server code Steps:
 1. Initialize WinSock Library
 2. create the Socket
 3. Get the IP(localhost) & port(ex: 12345) on which server should be running (other client will connect on this port)
 4. Bind the Ip/port with the socket created.
 5. Listening on the socket
-6. Accept the connection from client (Currently dealing only blocking calls) (stopped till we don't get client connection)
+6. Accept the connection from client (Currently dealing only blocking calls) (will wait till we don't get client connection)
 7. Receive & send
 8. Close the socket
 9. Cleanup the WinSock
@@ -25,6 +30,40 @@ Server code Steps:
 bool Initialize() {		// Boiler Plate code
 	WSADATA data;
 	return WSAStartup(MAKEWORD(2, 2), &data) == 0;
+}
+
+void InteractWithClinet(SOCKET clientSocket, vector<SOCKET>& clients) {
+	cout << "Client connected!!" << endl;
+
+	// 7. Receive & send
+	char buffer[4096];
+
+	while (1) {
+		int bytesrecvd = recv(clientSocket, buffer, sizeof(buffer), 0);
+
+		if (bytesrecvd <= 0) {			// 0 : clinet raised close call, <0 : s
+			cout << "Client Disconnected!!" << endl;
+			break;
+		}
+
+		string message(buffer, bytesrecvd);
+		cout << "Message from client: " << message << endl;
+
+		for (auto client : clients) {
+			// top stop sending msg to myself(cleint who has sent the msg)
+			if(client != clientSocket)
+				send(client, message.c_str(), message.length(), 0);
+		}
+	}
+
+	// removing the clientSocket from vector
+	auto it = find(clients.begin(), clients.end(), clientSocket);
+	if (it != clients.end()) {
+		clients.erase(it);
+	}
+	
+	// 8. Close the socket
+	closesocket(clientSocket);
 }
 
 int main() {
@@ -78,22 +117,22 @@ int main() {
 
 	cout << "Server has started listening on port: " << port << endl;
 
-	// 6. Start Accepting the connection from client
-	SOCKET clientSocket = accept(listenSocket, nullptr, nullptr);
-	if (clientSocket == INVALID_SOCKET) {
-		cout << "Client Socket invalid!!" << endl;
-		return 1;
+	vector<SOCKET> clients;
+
+	while (1) {
+		// 6. Start Accepting the connection from client
+		SOCKET clientSocket = accept(listenSocket, nullptr, nullptr);
+		if (clientSocket == INVALID_SOCKET) {
+			cout << "Client Socket invalid!!" << endl;
+			return 1;
+		}
+
+		clients.push_back(clientSocket);
+		thread t1(InteractWithClinet, clientSocket, std::ref(clients));
+		t1.detach();
 	}
 
-	// 7. Receive & send
-	char buffer[4096];
-	int bytesrecvd = recv(clientSocket, buffer, sizeof(buffer), 0);
-	
-	string message(buffer, bytesrecvd);
-	cout << "Message from client: " << message << endl;
-
 	// 8. Close the socket
-	//closesocket(clientSocket);
 	closesocket(listenSocket);
 	
 	// 9. Cleanup the WinSock
